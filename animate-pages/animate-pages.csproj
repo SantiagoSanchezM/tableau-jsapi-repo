@@ -64,8 +64,10 @@
     <Content Include="animate.html" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Pages - Life Expectancy.twbx" />
-    <Content Include="Pages - Map &amp; Timeline.twbx" />
+    <Content Include="Tableau Workbooks\Feliz Navidad! Merry Christmas!.twbx" />
+    <Content Include="Tableau Workbooks\Happy Hanukkah.twbx" />
+    <Content Include="Tableau Workbooks\Pages - Life Expectancy.twbx" />
+    <Content Include="Tableau Workbooks\Pages - Map &amp; Timeline.twbx" />
   </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
