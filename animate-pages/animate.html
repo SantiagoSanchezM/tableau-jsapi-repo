@@ -1,0 +1,554 @@
+<html>
+	<head>
+		<title>Animate your Tableau Server Vizzes!</title>
+		
+		<!-- Tableau JavaScript API -->
+		<script src="https://public.tableau.com/javascripts/api/tableau-2.min.js"></script>
+		
+		<!-- jQuery -->
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+		
+		<!-- Bootstrap -->
+		<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css">
+		<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js"></script>
+		
+		<!-- Animation Buttons -->
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.1.0/css/font-awesome.min.css" />
+		
+		<style>
+		.navBarButton{
+			border-color:#C0C0C0; 
+			margin-right:5px
+		}
+		.minBarWidth{
+			min-width: 1200px;
+		}
+		.btnWidth{
+			width: 95px;
+		}
+		.loadingHeight{
+			height: 38px;
+		}
+		.lb-sm {
+			font-size: 12px;
+		}
+		</style>
+		<script>
+			
+			var vizURL = '';
+			var pagesDimension = '';
+			var showHistoryToggle = false;
+			
+			var vizzesLoaded = 0;
+			var vizzesToLoad = 0;
+			
+			var currentPage = 0;
+			var pageSpeed = 400;			
+			var state = 'stop';
+			var loadingBarStart = 20;
+			var repeatToggle = true;
+			
+			/**
+			 * This is an array that holds information about our visualizations.
+			 */
+			myVizzes = new Array(
+				{
+					'pageLabel' : 'All Pages',
+					'url'  : vizURL, 
+					'pageID' : 'starterViz'
+				}
+			);
+			
+			/**
+			 * If a viz was already loaded, reset all pages when you click the 'Load' button again. 
+			 */
+			function resetVizzes(){		
+				// Clear the vizzes array
+				myVizzes[0].viz = null;
+				myVizzes.splice(1,myVizzes.length-1);
+				
+				// Reset viz counters to zero
+				vizzesLoaded = 0;
+				vizzesToLoad = 0;
+				currentPage = 0;		
+				state = 'stop';
+				
+				// Clear UI elements
+				$('#animationControls').hide();
+				$('#loadingBar').width("0%");
+				$('#topNavigation').empty();
+				$('#vizes').empty();
+				$(".alert").hide();
+			}
+			
+			/**
+			 * Once the first Viz loads, find the "Pages" sheet to get the dimension name & values to be used as filters. 
+			 * Each viz will have a different set of values, simulating the pages shelf.
+			 */
+			function getPagesData(){
+                
+				var filterValues = new Array();
+				var sheet = null;
+				var sheetType = myVizzes[0].viz.getWorkbook().getActiveSheet().getSheetType();
+				
+				if (sheetType == 'dashboard') {
+					sheet = myVizzes[0].viz.getWorkbook().getActiveSheet().getWorksheets().get("Pages");
+				}
+				else if (sheetType == 'worksheet') {
+					// TODO: When using a worksheet, the size doesn't adjust correctly, focus on Dashboards for now.
+					// sheet = myVizzes[0].viz.getWorkbook().getActiveSheet();
+				}
+				
+				if (sheet == null){
+					$("#pagesVizAlert").show();
+					$("#loadingContainer").hide();
+					return;
+				}
+				
+				options = {
+					maxRows: 0, 
+					ignoreAliases: false,
+					ignoreSelection: true,
+				};
+
+				sheet.getSummaryDataAsync(options).then(function(t){
+					
+					var columnHeaders = t.getColumns();
+					var rows = t.getData();
+					
+					pagesDimension = columnHeaders[0].getFieldName(); 
+					vizzesToLoad = rows.length;
+					
+					for (i = 1; i<=vizzesToLoad; i++){
+						
+						// Array is sorted on descending order, so start from the end
+						var newFilterElement = rows[vizzesToLoad-i][0].formattedValue;
+						
+						// Create an array of filters if 'Show History' is enabled, otherwise just use the current value
+						if (showHistoryToggle){
+							filterValues.push(newFilterElement);
+						}
+						else {
+							filterValues[0] = newFilterElement;
+						}
+						
+						var newPage = {
+							'pageLabel' : i, 
+							'url' : vizURL, 
+							'pageDimensionValues' : filterValues.slice(),
+							'pageID' : 'page'+i
+						};
+						myVizzes.push(newPage);
+						
+						loadNext(); 
+					}
+					
+				});
+            }
+			
+			/**
+			 * Load the first visualization from the URL provided
+			 */
+			function loadMainViz() {
+				
+				// Clear any vizzes that could have been previously loadedd
+				resetVizzes();
+				
+				var width = 1;
+				vizURL = $('#vizInput').val();
+				
+				myVizzes[0].url = vizURL;
+				
+				// Load the main viz & setup process to load all pages once done
+				var vizOptions = {
+					showTabs           : true,
+					hideToolbar        : true,
+					onFirstInteractive: function () { getPagesData(); }
+				};
+				
+				var vizDiv = document.createElement('div');
+				vizDiv.id = myVizzes[0].pageID + 'Viz';
+				document.getElementById('vizes').appendChild(vizDiv);
+				
+				try { 
+					myVizzes[0].viz = new tableau.Viz(
+						document.getElementById(myVizzes[0].pageID + 'Viz'),
+						vizURL,
+						vizOptions
+					);
+					
+					// TODO: How do we check for errors here? Cross-domain errors specifically ('Refused to display content...')
+					//.then(function (vizzy){
+					//	myVizzes[0].viz.getWorkbook().getActiveSheet().getWorksheets().get("Pages");
+					//});	
+				}
+				catch(err) {
+					$("#shareLinkAlert").show();
+					$('#loadingContainer').hide();
+					return;
+				};
+				
+				// Start showing progress
+				$('#loadingContainer').show();
+				setInterval(function () {
+					if ($('#loadingBar').width() < loadingBarStart) {
+					  width++; 
+					  $('#loadingBar').width(width + '%'); 
+					}
+				}, 50);
+				
+				var el = document.createElement('li');
+				el.id = myVizzes[0].pageID + 'Nav';
+				document.getElementById('topNavigation').appendChild(el);
+				
+				$('#' + myVizzes[0].pageID + 'Nav').html('<a href="#">' + myVizzes[0].pageLabel + '</a>');
+				$('#' + myVizzes[0].pageID + 'Nav').data('id', 0);
+				$('#' + myVizzes[0].pageID + 'Nav').click(function () {
+					currentPage = $(this).data('id');
+					switchDashboard($(this).data('id'));
+				});
+				$('#' + myVizzes[0].pageID + 'Nav').addClass('btn btnWidth nav-item navBarButton mt-1');
+				$('#' + myVizzes[0].pageID + 'Viz').addClass('active');
+				
+			}
+			
+			/**
+			 * Load one viz, then wait a few seconds before triggering the next load.
+             * Inspired on code by Derrick Austin: https://interworks.com/blog/daustin/2016/03/24/preloading-dashboards-tableau-javascript-api/
+			 */
+			function loadNext() {
+				// If we have a pageID, load it first.
+				for (i = 0; i < myVizzes.length; i++) {
+					if (location.pageID && location.pageID == '#' + myVizzes[i].pageID) {
+						if (!myVizzes[i].hasOwnProperty('viz') || !myVizzes[i].viz) {
+							load(i);
+							return;
+						}
+					}
+				}
+				
+				// Otherwise, load the viz list.
+				for (i = 0; i < myVizzes.length; i++) {
+					// Skip vizes that are already loaded.
+					if (myVizzes[i].hasOwnProperty('viz') && myVizzes[i].viz) {
+						continue;
+					}
+					
+					load(i);
+					return;
+				}
+				
+			}
+			
+			/**
+			 * Load all other vizualizations in the background, these are the 'pages'
+             * Inspired on code by Derrick Austin: https://interworks.com/blog/daustin/2016/03/24/preloading-dashboards-tableau-javascript-api/
+			 */
+			function load(i) {
+				var url  = myVizzes[i].url;
+				var vizOptions = {
+					showTabs           : true,
+					hideToolbar        : true,
+					onFirstInteractive : function () { checkLoadingProgress(i); }
+				};
+				
+				var vizDiv = document.createElement('div');
+				vizDiv.id = myVizzes[i].pageID + 'Viz';
+				document.getElementById('vizes').appendChild(vizDiv);
+				
+				myVizzes[i].viz = new tableau.Viz(
+					document.getElementById(myVizzes[i].pageID + 'Viz'),
+					url,
+					vizOptions
+				);
+				
+				var el = document.createElement('li');
+				el.id = myVizzes[i].pageID + 'Nav';
+				document.getElementById('topNavigation').appendChild(el);
+				
+				$('#' + myVizzes[i].pageID + 'Nav').html('<a href="#">' + myVizzes[i].pageLabel + '</a>');
+				$('#' + myVizzes[i].pageID + 'Nav').data('id', i);
+				$('#' + myVizzes[i].pageID + 'Nav').click(function () {
+					currentPage = $(this).data('id');
+					switchDashboard($(this).data('id'));
+				});
+				$('#' + myVizzes[i].pageID + 'Nav').addClass('btn btnWidth nav-item navBarButton mt-1');
+				
+				if ($('.active').length > 0) {
+					$('#' + myVizzes[i].pageID + 'Viz').hide();
+				} else {
+					$('#' + myVizzes[i].pageID + 'Viz').addClass('active');
+					$('#' + myVizzes[i].pageID + 'Nav').addClass('active');
+				}
+				
+				// Ok, we loaded one, now wait a few seconds and load another.
+				setTimeout(loadNext, 500);
+			}
+			
+			/**
+			 * Enable the animation buttons only when all 'pages' have been loaded
+			 */
+			function checkLoadingProgress(i){
+				
+				var pageViz;
+				var sheetType = myVizzes[i].viz.getWorkbook().getActiveSheet().getSheetType();
+				
+				if (sheetType == 'dashboard') {
+					pageViz = myVizzes[i].viz.getWorkbook().getActiveSheet().getWorksheets().get("Pages");
+				}
+				else if (sheetType == 'worksheet') {
+					pageViz = myVizzes[i].viz.getWorkbook().getActiveSheet();
+				}
+				
+				pageViz.applyFilterAsync(pagesDimension, myVizzes[i].pageDimensionValues, tableau.FilterUpdateType.REPLACE)
+				.then(function(){
+					vizzesLoaded++;
+					$('#loadingBar').width((loadingBarStart + (vizzesLoaded/vizzesToLoad)*100) + "%");					
+					
+					if (vizzesLoaded == vizzesToLoad) {
+						$('#loadingContainer').hide("slow");
+						$('#animationControls').show("slow");
+					}
+				});
+				
+			}
+			
+			/**
+			 * Unhide a dashboard; hide the currently active one.
+             * Inspired on code by Derrick Austin: https://interworks.com/blog/daustin/2016/03/24/preloading-dashboards-tableau-javascript-api/
+			 */
+			function switchDashboard(id) {
+				$('#vizes .active').hide().removeClass('active'); // TODO: Is this causing the flickering??
+				$('.navbar-nav .active').removeClass('active');
+				$('#' + myVizzes[id].pageID + 'Viz').show().addClass('active'); // TODO: Is this causing the flickering??
+				$('#' + myVizzes[id].pageID + 'Nav').addClass('active');
+				location.pageID = myVizzes[id].pageID;
+			}
+			
+			/**
+			 * Lets the user select whether pages should be 'additive' or just for the last value. Like 'Show History' in Desktop.
+			 */
+			function toggleShowHistory(){
+				showHistoryToggle = !showHistoryToggle;
+			}
+			
+			/**
+			 * This 'animates' the viz, changing one page after another
+			 */
+			function pressPlay(){
+			
+				// Change one page, then wait a bit before going to the next
+				setTimeout(function() {
+					
+					// While there are still vizzes available, keep changing the pages
+					if (currentPage < myVizzes.length-1 && state=='play'){
+						currentPage++;
+						switchDashboard(currentPage);
+					}
+					else if (repeatToggle && state=='play') {
+						currentPage = 0;
+					}
+					else {
+						state='stop';
+						return;
+					}
+					
+					pressPlay();
+				}, pageSpeed);
+				
+			}
+			
+			/**
+			 * The following methods control the animation buttons
+			 */
+			
+			// Go back one page
+			function buttonBackPress() {
+				if(currentPage > 0){
+					currentPage--;
+					switchDashboard(currentPage);
+				}
+			}
+
+			// Go forward one page
+			function buttonForwardPress() {
+				if(currentPage < myVizzes.length-1){
+					  currentPage++;
+					  switchDashboard(currentPage);
+				}
+			}
+
+			// Go back to the beginning
+			function buttonRewindPress() {
+				currentPage = 0;
+				switchDashboard(currentPage);
+			}
+
+			// Go forward to the end
+			function buttonFastforwardPress() {
+				currentPage = myVizzes.length-1;
+				switchDashboard(currentPage);
+			}
+
+			// Start the animation
+			function buttonPlayPress() {
+				if(state=='stop'){
+				  state='play'; 
+				  pressPlay();
+				}	
+			}
+
+			// Stop the animation
+			function buttonStopPress(){
+				state = 'stop';		
+			}
+			
+			// Enable/Disable Repeat
+			function toggleRepeat(el){
+				repeatToggle = !repeatToggle;	
+			}
+			
+			// Set how fast pages should change
+			function changeSpeed(el){
+				pageSpeed = 2000 * (1/$('#'+el)[0].value);
+			}
+
+			/**
+			 * See if there are any parameters passed in the URL
+			 * Code from: http://www.jquerybyexample.net/2012/06/get-url-parameters-using-jquery.html
+			 */  
+			function getUrlParameter(sParam) {
+				var sPageURL = window.location.search.substring(1),
+					sURLVariables = sPageURL.split('&'),
+					sParameterName,
+					i;
+
+				for (i = 0; i < sURLVariables.length; i++) {
+					sParameterName = sURLVariables[i].split('=');
+
+					if (sParameterName[0] === sParam) {
+						return sParameterName[1] === undefined ? true : decodeURIComponent(sParameterName[1]);
+					}
+				}
+			};
+			
+			/**
+			 * Hide the animation controls until a valid URL is provided, check if that URL was provided as a URL parameter
+			 */ 
+			$(function(){
+				$('#loadingContainer').hide();
+				$('#animationControls').hide();
+				$(".alert").hide();
+				
+				if (getUrlParameter('vizURL') != null) {
+					$('#vizInput').val(getUrlParameter('vizURL'));
+					loadMainViz();
+				}
+			});
+			
+
+			
+		</script>
+	</head>
+	<body>
+	
+		<!-- Navigation bar on the top, includes the pages in a collapsible container -->
+		<div class="container minBarWidth">
+		<nav class="navbar navbar-light bg-light">
+			<div class="w-100">
+				<div class="form-inline">
+					<input id="vizInput" class="form-control mr-sm-2 mr-2 w-75" placeholder="Copy+Paste your Tableau Viz URL" aria-label="Your Viz URL">
+					<div class="form-check form-check-inline mr-4">
+					  <input class="form-check-input" type="checkbox" id="showHistoryCheckbox" onclick="toggleShowHistory();">
+					  <label class="form-check-label lb-sm" for="showHistoryCheckbox">Show History</label>
+					</div>
+					<button class="btn btn-outline-success my-2 my-sm-0 mr-2" onclick='loadMainViz()'>Load</button>
+					<button class="navbar-toggler mr-2" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+					  <span class="navbar-toggler-icon"></span>
+					</button>
+				</div>
+				<div class="collapse navbar-collapse" id="navbarNav">		
+					<ul class="nav" id="topNavigation" style="margin-top:10px"></ul>	
+				</div>
+			</div>
+		</nav>
+		</div>
+		
+		<!-- Errors & Alerts to be shown here -->
+		<div class="container minBarWidth">
+			<div id="shareLinkAlert" class="alert alert-danger mt-2 mb-1" role="alert">
+				<strong>Whoops!</strong> I'm having trouble loading the URL you provided. Try copying the link from Tableau Server's toolbar:
+				<div class="text-center mt-4">
+				  <img class="mt-2" src="https://onlinehelp.tableau.com/current/pro/desktop/en-us/Img/shareviewliink1a.png" alt="Share Link Options">
+				  <br>
+				  <img class="mt-2" src="https://onlinehelp.tableau.com/current/pro/desktop/en-us/Img/shareview_menu.png" alt="Tableau Server Toolbar">
+				</div>
+			</div>
+			<div id="pagesVizAlert" class="alert alert-danger mt-2 mb-1" role="alert">
+				<strong>Oh snap!</strong> I couldn't find the "Pages" sheet on this Viz. Make sure you used the URL of a <strong>dashboard</strong> and that it has a sheet called <strong>"Pages"</strong>.
+			</div>
+		</div>
+		
+		<!-- The loading bar to show progress -->
+		<div id="loadingContainer" class="container mt-2 mb-1 progress loadingHeight w-50">
+		  <div id="loadingBar" class="progress-bar bg-info progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">Loading...</div>
+		</div>
+		
+		<!-- The animation controls -->
+		<div id="animationControls" class="text-center mt-2 mb-1">
+			<button type="button" id="button_fbw" class="btn"  onclick='buttonRewindPress()'>
+			  <i class="fa fa-fast-backward"></i>
+			</button>
+			<button type="button" id="button_bw" class="btn" onclick='buttonBackPress()'>
+			  <i class="fa fa-backward"></i>
+			</button>
+			<button type="button" id="button_play" class="btn" onclick='buttonPlayPress()'>
+			  <i class="fa fa-play"></i>
+			</button>
+			<button type="button" id="button_stop" class="btn" onclick='buttonStopPress()'>
+			  <i class="fa fa-pause"></i>
+			</button>
+			<button type="button" id="button_fw" class="btn" onclick='buttonForwardPress()'>
+			  <i class="fa fa-forward"></i>
+			</button>
+			<button type="button" id="button_ffw" class="btn" onclick='buttonFastforwardPress()'>
+			  <i class="fa fa-fast-forward"></i>
+			</button>
+			
+			<span class="p-3"></span>
+			
+			<div id="speedSelector" class="btn-group btn-group-toggle" data-toggle="buttons">
+			  <label class="btn btn-light">
+				<input type="radio" name="options" id="option1" value="1" autocomplete="off" onchange='changeSpeed(this.id)'> 1x
+			  </label>
+			  <label class="btn btn-light active">
+				<input type="radio" name="options" id="option2" value="5" autocomplete="off" onchange='changeSpeed(this.id)' checked> 5x
+			  </label>
+			  <label class="btn btn-light">
+				<input type="radio" name="options" id="option3" value="10" autocomplete="off" onchange='changeSpeed(this.id)'> 10x
+			  </label>
+			</div>
+			
+			<span class="p-3"></span>
+			
+			<div id="repeatSelector" class="btn-group btn-group-toggle" data-toggle="buttons">
+			  <label class="btn btn-light active" title='Repeat' >
+				<input type="radio" name="options" id="repeatRadio" value="1" autocomplete="off" onchange='toggleRepeat(this.id);' checked>
+				&nbsp;
+				<i class="fa fa-repeat"></i>
+				&nbsp;
+			  </label>
+			  <label class="btn btn-light" title='No Repeat'>
+				<input type="radio" name="options" id="noRepeatRadio" value="1" autocomplete="off" onchange='toggleRepeat(this.id);' >
+				&nbsp;
+				<i class="fa fa-circle-o-notch"></i>
+				&nbsp;
+			  </label>
+			</div>
+			
+		</div>
+		
+		<!-- Container for all 'pages' -->
+		<center><div id="vizes"></div></center>
+	</body>
+</html>
